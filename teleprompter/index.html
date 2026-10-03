@@ -217,10 +217,15 @@
   var words=[], cursor=0;
   var lang='en-US';
   var quality='auto';  // 'auto' | '1080' | '720' — manual override of the capture tier
-  // Capture-quality tier. Only cap to 720p for genuine touch-primary mobile — never clamp a real
-  // desktop/laptop just because its window is short (the old min(w,h)<760 test misfired on laptops).
-  var coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
-  var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (coarsePointer && Math.min(window.innerWidth,window.innerHeight) < 760);
+  // Capture-quality tier for "Auto". Use the browser's EXPLICIT mobile signal
+  // (Chromium navigator.userAgentData.mobile) so touchscreen laptops / 2-in-1s are
+  // not misread as phones (a touch pointer is NOT a reliable mobile tell). Fall back
+  // to a UA test only when that API is absent (e.g. Safari). The Quality picker
+  // overrides this regardless, so detection can never silently cap anyone.
+  var uaData = navigator.userAgentData;
+  var isMobile = (uaData && typeof uaData.mobile === 'boolean')
+    ? uaData.mobile
+    : /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent);
 
   var LS_SCRIPT='flp_script_v1', LS_SEEN='flp_seen_v1', LS_SIZE='flp_size_v1', LS_LANG='flp_lang_v1', LS_QUAL='flp_qual_v1';
 
@@ -350,6 +355,8 @@
         video:{ facingMode:'user', width:{ideal:vw}, height:{ideal:vh} },
         audio:{ deviceId:adev?{exact:adev}:undefined, echoCancellation:true, noiseSuppression:true } });
       cam.srcObject=stream; camoff.style.display='none'; document.getElementById('b-rec').textContent='● Record';
+      try{ var vt0=stream.getVideoTracks()[0], st0=(vt0&&vt0.getSettings)?vt0.getSettings():{};
+        if(st0.width){ toastMsg('Camera ready: <b>'+st0.width+'×'+st0.height+'</b> ('+(quality==='auto'?'Auto':quality+'p')+').',3500); } }catch(e){}
       var devs=await navigator.mediaDevices.enumerateDevices(), mics=devs.filter(function(d){return d.kind==='audioinput';}), cur=micsel.value;
       micsel.innerHTML=''; mics.forEach(function(d,i){ var o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||('Mic '+(i+1)); micsel.appendChild(o); }); if(cur)micsel.value=cur;
     }catch(e){ if(!quiet){ camoff.style.display='grid'; camoff.querySelector('b').textContent='Camera/mic blocked: '+(e.name||e.message); } }
