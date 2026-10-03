@@ -130,6 +130,7 @@
     <span class="btn" id="b-small">A−</span><span class="btn" id="b-large">A＋</span>
     <span class="btn" id="b-script">✎ Script</span>
     <span class="btn" id="b-help">?</span>
+    <span class="btn on" id="b-install" style="display:none">⤓ Install</span>
     <span class="btn" id="b-mir">⇋</span>
     <span class="btn" id="b-full">⛶</span>
     <span class="lbl">voice lang</span>
@@ -432,6 +433,14 @@
   function closeHelp(){ helpSheet.classList.remove('show'); lsSet(LS_SEEN,'1'); }
   document.getElementById('b-help').onclick=openHelp;
   document.getElementById('h-close').onclick=closeHelp;
+
+  // ---- PWA install: show an in-bar Install button only when the browser says it's installable ----
+  var deferredPrompt=null, bInstall=document.getElementById('b-install');
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt=e; if(bInstall)bInstall.style.display=''; });
+  if(bInstall) bInstall.onclick=async function(){ if(!deferredPrompt)return; deferredPrompt.prompt();
+    try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt=null; bInstall.style.display='none'; };
+  window.addEventListener('appinstalled', function(){ if(bInstall)bInstall.style.display='none';
+    toastMsg('Installed! Find <b>Follow Teleprompter</b> with your apps.',4000); });
 
   // ---- manual scroll: mouse wheel (desktop) + touch drag (mobile) ----
   window.addEventListener('wheel',function(e){ if(editor.classList.contains('show')||helpSheet.classList.contains('show'))return;
