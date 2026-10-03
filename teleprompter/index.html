@@ -210,7 +210,10 @@
   var stream=null, rec=null, chunks=[], recT=null, recStart=0;
   var words=[], cursor=0;
   var lang='en-US';
-  var isMobile = Math.min(window.innerWidth,window.innerHeight) < 760 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  // Capture-quality tier. Only cap to 720p for genuine touch-primary mobile — never clamp a real
+  // desktop/laptop just because its window is short (the old min(w,h)<760 test misfired on laptops).
+  var coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+  var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (coarsePointer && Math.min(window.innerWidth,window.innerHeight) < 760);
 
   var LS_SCRIPT='flp_script_v1', LS_SEEN='flp_seen_v1', LS_SIZE='flp_size_v1', LS_LANG='flp_lang_v1';
 
