@@ -1,7 +1,7 @@
-/* Follow Teleprompter — tiny offline cache (MIT).
+/* Follow Teleprompter — tiny offline cache (Apache-2.0).
    Caches the page so it reopens with no connection. Voice-follow still
    needs the internet; manual scroll + record work fully offline. */
-var CACHE='flp-v2';
+var CACHE='flp-v3';
 var ASSETS=['./','./index.html'];
 self.addEventListener('install',function(e){
   self.skipWaiting();
