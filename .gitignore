@@ -1,0 +1,22 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/
+
+# server-side backups (kept on the host, not in the repo)
+*.bak
+*.bak-*
+
+# secrets / local env — never commit
+.env
+.env.*
+*.pem
+*.key
+
+# logs / deps
+*.log
+node_modules/

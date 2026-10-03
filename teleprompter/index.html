@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#0a0a0b" />
+<meta name="description" content="A free, private teleprompter that follows your voice and scrolls to you. Works offline for manual scroll and recording." />
+<title>Follow Teleprompter</title>
+<style>
+  :root{
+    --bg:#0a0a0b; --ink:#efe9dd; --dim:#8a877f; --ember:#ff7a1a;
+    --read:10vh; --size:40px; --panel:#15151a; --line:#2a2a30;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+    font-family:"Helvetica Neue",Arial,system-ui,-apple-system,sans-serif;
+    -webkit-text-size-adjust:100%;overscroll-behavior:none}
+  button{font-family:inherit}
+
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);background:#000;z-index:0}
+  #camoff{position:fixed;left:0;right:0;bottom:76px;z-index:6;text-align:center;color:var(--dim);
+    font-size:13px;padding:0 24px;line-height:1.5;pointer-events:none}
+  #camoff b{color:var(--ink)}
+  #camoff small{opacity:.8}
+  /* Light wash only. The very TOP stays clear so the camera preview shows through
+     for head-framing near the lens; the text carries its own outline/shadow. */
+  #scrim{position:fixed;left:0;right:0;top:0;height:60vh;z-index:5;pointer-events:none;
+    background:linear-gradient(180deg,rgba(10,10,11,0) 0%,rgba(10,10,11,.12) 14%,rgba(10,10,11,.30) 46%,rgba(10,10,11,0) 100%)}
+  /* faint head-room framing guide near the top of frame */
+  #frameguide{position:fixed;left:8vw;right:8vw;top:6.5vh;height:0;z-index:4;pointer-events:none;
+    border-top:1px dashed rgba(239,233,221,.16)}
+  #frameguide::after{content:'head-room';position:absolute;right:0;top:-15px;font-size:10px;
+    letter-spacing:1.5px;text-transform:uppercase;color:rgba(239,233,221,.28)}
+  #lensdot{position:fixed;top:max(6px,env(safe-area-inset-top));left:14px;z-index:30;color:var(--dim);
+    font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.9}
+  #lensdot b{color:var(--ember)}
+  #readline{position:fixed;left:0;right:0;top:var(--read);z-index:20;pointer-events:none;border-top:1px solid rgba(255,122,26,.28)}
+  #scroller{position:absolute;left:50%;top:0;transform:translateX(-50%);width:min(1000px,92vw);padding:0 18px;z-index:10;
+    will-change:transform}
+  #spacer-top{height:var(--read)} #spacer-bot{height:92vh}
+  /* strong multi-directional outline so text reads over a bare camera image (no heavy scrim) */
+  .para{font-size:var(--size);line-height:1.5;font-weight:600;margin:0 0 1.05em;letter-spacing:.2px;text-wrap:pretty;
+    text-shadow:0 0 3px #000,0 1px 2px #000,0 2px 10px rgba(0,0,0,.95),
+      1px 0 2px rgba(0,0,0,.9),-1px 0 2px rgba(0,0,0,.9),0 -1px 2px rgba(0,0,0,.9)}
+  .head{font-size:calc(var(--size)*.62);color:var(--ember);text-transform:uppercase;letter-spacing:3px;font-weight:700;
+    margin:1.3em 0 .5em;opacity:.95;
+    text-shadow:0 0 3px #000,0 1px 2px #000,0 2px 10px rgba(0,0,0,.95),1px 0 2px rgba(0,0,0,.9),-1px 0 2px rgba(0,0,0,.9)}
+  .em{color:var(--ember)}
+  span.w.spoken{opacity:.42}
+  span.w.here{color:var(--ember)}
+  #scroller.mir{transform:translateX(-50%) scaleX(-1)}
+
+  #bar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;gap:6px;justify-content:center;align-items:center;
+    flex-wrap:wrap;padding:8px calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+    background:rgba(10,10,11,.82);backdrop-filter:blur(6px);transition:opacity .4s}
+  #bar.hide{opacity:0;pointer-events:none}
+  .btn{cursor:pointer;background:#17171c;border:1px solid #33333c;color:var(--ink);border-radius:12px;
+    padding:12px 14px;font-size:15px;font-weight:600;letter-spacing:.3px;user-select:none;min-width:48px;min-height:48px;
+    display:inline-flex;align-items:center;justify-content:center;text-align:center;touch-action:manipulation}
+  .btn:active{background:#20202a}
+  .btn.on{background:#13261a;border-color:#2e7d4f;color:#bff0d0}
+  .btn.rec{background:#3a0f0f;border-color:#ff3b30;color:#ffd7d4}
+  .btn.big{font-size:16px;padding:12px 16px}
+  #bar .lbl{color:var(--dim);font-size:11px;letter-spacing:1px;align-self:center;margin:0 1px}
+  #bar .sep{width:1px;height:26px;background:var(--line);margin:0 2px}
+  select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;max-width:150px;min-height:44px}
+
+  #recind{position:fixed;top:max(10px,env(safe-area-inset-top));left:14px;z-index:40;display:none;align-items:center;gap:8px;font-size:15px;color:#ff6a60;font-weight:700}
+  #recind .d{width:12px;height:12px;border-radius:50%;background:#ff3b30;animation:blink 1s steps(2,start) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  #status{position:fixed;top:max(10px,env(safe-area-inset-top));right:14px;z-index:40;font-size:12px;color:var(--dim)}
+  #status b{color:var(--ink)}
+  #big{position:fixed;inset:0;z-index:50;display:none;place-items:center;font-size:22vw;color:var(--ember);font-weight:700;
+    background:rgba(10,10,11,.5)}
+  #toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);z-index:45;background:rgba(20,20,24,.96);color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;padding:12px 18px;font-size:14px;display:none;max-width:86vw;text-align:center;line-height:1.5}
+  #toast b{color:var(--ember)}
+
+  /* ---- overlays (editor + help): scrollable, mobile-friendly ---- */
+  .sheet{position:fixed;inset:0;z-index:60;background:#070708;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
+  .sheet.show{display:block}
+  .wrap{max-width:720px;margin:0 auto;padding:max(20px,env(safe-area-inset-top)) 18px 40px}
+  .wrap h1{font-size:22px;margin:.2em 0 .1em;color:var(--ink)}
+  .wrap h2{font-size:15px;color:var(--ember);text-transform:uppercase;letter-spacing:2px;margin:1.4em 0 .5em}
+  .wrap p,.wrap li{font-size:15px;line-height:1.65;color:#d8d3c7}
+  .wrap small{color:var(--dim)}
+  .wrap a{color:var(--ember)}
+  textarea{width:100%;min-height:46vh;background:#0f0f12;color:var(--ink);border:1px solid var(--line);border-radius:12px;
+    padding:14px;font-size:16px;line-height:1.5;font-family:inherit;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .pill{flex:1;min-width:140px;text-align:center;cursor:pointer;border-radius:12px;padding:14px;font-size:16px;font-weight:700;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);min-height:50px;touch-action:manipulation}
+  .pill.primary{background:#13261a;border-color:#2e7d4f;color:#bff0d0}
+  .pill:active{filter:brightness(1.2)}
+  .foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);color:var(--dim);font-size:13px;line-height:1.7}
+  .foot a{color:var(--ember)}
+  .hintbadge{display:inline-block;background:#1c1206;border:1px solid #3a2a12;color:#f0c98a;border-radius:8px;padding:2px 8px;font-size:12px}
+</style>
+</head>
+<body>
+  <video id="cam" autoplay muted playsinline></video>
+  <div id="camoff"><b>Tap “Camera” below</b> to record yourself while you read <small>(optional)</small></div>
+  <div id="scrim"></div>
+  <div id="frameguide"></div>
+  <div id="lensdot">↑ camera is up here <b>•</b></div>
+  <div id="readline"></div>
+  <div id="recind"><span class="d"></span><span id="rectime">0:00</span></div>
+  <div id="status"><span id="mode">manual</span> · <b id="wpm">130</b> wpm</div>
+  <div id="big"></div>
+  <div id="toast"></div>
+
+  <div id="scroller">
+    <div id="spacer-top"></div>
+    <div id="script"></div>
+    <div id="spacer-bot"></div>
+  </div>
+
+  <div id="bar">
+    <span class="btn big" id="b-voice">🎤 Follow my voice</span>
+    <span class="btn big" id="b-rec">● Camera</span>
+    <span class="sep"></span>
+    <span class="btn" id="b-top">⤒ Top</span>
+    <span class="btn" id="b-play">▶ Scroll</span>
+    <span class="lbl">speed</span>
+    <span class="btn" id="b-slow">−</span><span class="btn" id="b-fast">+</span>
+    <span class="lbl">size</span>
+    <span class="btn" id="b-small">A−</span><span class="btn" id="b-large">A＋</span>
+    <span class="btn" id="b-script">✎ Script</span>
+    <span class="btn" id="b-help">?</span>
+    <span class="btn" id="b-mir">⇋</span>
+    <span class="btn" id="b-full">⛶</span>
+    <span class="lbl">voice lang</span>
+    <select id="langsel" title="voice-follow language" aria-label="voice-follow language">
+      <option value="en-US">English</option>
+      <option value="sw-KE">Kiswahili</option>
+      <option value="so-SO">Soomaali</option>
+      <option value="ar-SA">العربية</option>
+      <option value="fr-FR">Français</option>
+      <option value="es-ES">Español</option>
+      <option value="pt-BR">Português</option>
+      <option value="am-ET">አማርኛ</option>
+      <option value="hi-IN">हिन्दी</option>
+    </select>
+    <select id="micsel" title="microphone" aria-label="microphone"></select>
+  </div>
+
+  <!-- ===== Script editor ===== -->
+  <div class="sheet" id="editor">
+    <div class="wrap">
+      <h1>Your script</h1>
+      <p><small>Type or paste your own words below. Leave a blank line between paragraphs.
+        Start a line with <b>#</b> for a section heading. Wrap a phrase in <b>*stars*</b> to make it stand out.</small></p>
+      <textarea id="scripttext" spellcheck="false" placeholder="Paste or type your script here…"></textarea>
+      <div class="row">
+        <button class="pill primary" id="e-use">Use this script</button>
+        <button class="pill" id="e-sample">Load sample</button>
+        <button class="pill" id="e-cancel">Cancel</button>
+      </div>
+      <p style="margin-top:12px"><small>Your script is saved in this browser only, on this device. It is never uploaded.</small></p>
+    </div>
+  </div>
+
+  <!-- ===== Help / onboarding ===== -->
+  <div class="sheet" id="help">
+    <div class="wrap">
+      <h1>Follow Teleprompter</h1>
+      <p><span class="hintbadge">20-second start</span></p>
+      <ol>
+        <li><b>✎ Script</b> — paste your own words (or keep the sample).</li>
+        <li><b>● Camera</b> — optional, turns on your front camera so you can record.</li>
+        <li><b>🎤 Follow my voice</b> — then just start reading out loud. The text scrolls to keep up with you.</li>
+      </ol>
+      <p>No voice-follow? Tap <b>▶ Scroll</b> for steady auto-scroll, or <b>drag the text with your finger</b> to move it yourself.</p>
+      <p>Reading in another language? Pick it in the <b>voice lang</b> menu (bottom bar) so voice-follow listens correctly.
+        <b>Dragging and auto-scroll work in any language</b>, with or without the internet.</p>
+
+      <h2>Works offline</h2>
+      <p><b>Manual scroll and recording always work</b>, even with no internet — that is the floor you can count on.
+        <b>Follow-my-voice</b> is the extra magic for <b>when you are online</b>: it uses your browser's speech recognition,
+        which needs a connection and works best in <b>Chrome or Edge</b> (it is not available in some browsers, like iPhone Safari).</p>
+
+      <h2>Your privacy</h2>
+      <p>When you turn on <b>Follow my voice</b>, your browser sends audio to its speech-recognition service to match your words —
+        that is how voice-follow works, and it needs the internet.
+        Your <b>recording stays on your device</b>: the video is saved straight to your downloads and is never uploaded by this tool.</p>
+
+      <div class="row">
+        <button class="pill primary" id="h-close">Got it</button>
+      </div>
+
+      <div class="foot">
+        A free gift from the <b>Fellowship of Living Systems</b> · <b>Food System Hackers</b>.<br>
+        Code: MIT. This page &amp; wording: CC BY 4.0 — use it, remix it, keep the credit.<br>
+        <a href="https://gather.livingsys.org/" target="_blank" rel="noopener">There's more inside →</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var scroller=document.getElementById('scroller'), scriptBox=document.getElementById('script'),
+      cam=document.getElementById('cam'), camoff=document.getElementById('camoff'),
+      wpmEl=document.getElementById('wpm'), modeEl=document.getElementById('mode'), big=document.getElementById('big'),
+      bar=document.getElementById('bar'), toast=document.getElementById('toast'),
+      recind=document.getElementById('recind'), rectime=document.getElementById('rectime'), micsel=document.getElementById('micsel'),
+      langsel=document.getElementById('langsel'),
+      editor=document.getElementById('editor'), helpSheet=document.getElementById('help'), scripttext=document.getElementById('scripttext');
+
+  var wpm=130, pos=0, target=0, playing=false, voiceOn=false, last=null;
+  var stream=null, rec=null, chunks=[], recT=null, recStart=0;
+  var words=[], cursor=0;
+  var lang='en-US';
+  var isMobile = Math.min(window.innerWidth,window.innerHeight) < 760 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+
+  var LS_SCRIPT='flp_script_v1', LS_SEEN='flp_seen_v1', LS_SIZE='flp_size_v1', LS_LANG='flp_lang_v1';
+
+  function lsGet(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ window.localStorage.setItem(k,v); }catch(e){} }
+
+  var SAMPLE =
+"Welcome. This is your teleprompter. Tap the Script button to paste your own words, then tap Follow my voice and just start reading out loud.\n\n"+
+"It scrolls to keep up with you. No internet, or no voice-follow? No problem — tap Scroll for a steady auto-scroll, or drag the text with your finger.";
+
+  function readPx(){ return window.innerHeight*0.10; }
+  function contentPx(){ return scroller.scrollHeight - window.innerHeight; }
+  function apply(){ scroller.style.transform='translateX(-50%) translateY('+(-pos)+'px)'+(scroller.classList.contains('mir')?' scaleX(-1)':''); }
+  function clamp(v){ return Math.max(0,Math.min(contentPx(),v)); }
+  function pxPerSec(){ var W=words.length||1; var secs=(W/wpm)*60; return contentPx()/Math.max(secs,1); }
+  function toastMsg(h,ms){ toast.innerHTML=h; toast.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(function(){toast.style.display='none';},ms||4500); }
+
+  // ---- build the script DOM from plain text (# heading, *emphasis*) ----
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function emph(s){ return esc(s).replace(/\*([^*]+)\*/g,'<span class="em">$1</span>'); }
+  function renderScript(txt){
+    var blocks = txt.replace(/\r/g,'').split(/\n\s*\n/), html='';
+    for(var i=0;i<blocks.length;i++){
+      var b=blocks[i].trim(); if(!b) continue;
+      if(b.charAt(0)==='#'){ html += '<p class="head">'+emph(b.replace(/^#+\s*/,''))+'</p>'; }
+      else { html += '<p class="para">'+emph(b.replace(/\n/g,' '))+'</p>'; }
+    }
+    scriptBox.innerHTML = html || '<p class="para">(empty script)</p>';
+    words=[]; wrapWords(); cursor=0; markHere();
+    goTop();
+  }
+
+  // ---- wrap every word in a span so voice-follow can target positions ----
+  // Unicode-aware so voice-follow can match non-Latin scripts (Kiswahili, Arabic, Amharic, Hindi…)
+  var STRIP; try{ STRIP=new RegExp("[^\\p{L}\\p{N}']","gu"); }catch(e){ STRIP=/[^a-z0-9']/g; }
+  function norm(s){ return s.toLowerCase().replace(STRIP,''); }
+  function wrapWords(){
+    var walker=document.createTreeWalker(scriptBox, NodeFilter.SHOW_TEXT, null), nodes=[];
+    while(walker.nextNode()){ if(walker.currentNode.nodeValue.trim()) nodes.push(walker.currentNode); }
+    nodes.forEach(function(tn){
+      var parts=tn.nodeValue.split(/(\s+)/), frag=document.createDocumentFragment();
+      parts.forEach(function(p){
+        if(p==='') return;
+        if(/^\s+$/.test(p)) frag.appendChild(document.createTextNode(p));
+        else { var sp=document.createElement('span'); sp.className='w'; sp.textContent=p; frag.appendChild(sp); }
+      });
+      tn.parentNode.replaceChild(frag,tn);
+    });
+    scriptBox.querySelectorAll('span.w').forEach(function(sp){ words.push({el:sp,norm:norm(sp.textContent),top:0}); });
+    measure();
+  }
+  function measure(){ for(var i=0;i<words.length;i++) words[i].top=words[i].el.offsetTop; }
+  function markHere(){ for(var i=0;i<words.length;i++){ var e=words[i].el; e.classList.toggle('spoken', i<cursor); e.classList.toggle('here', i===cursor); } }
+
+  // ---- animation loop: always ease pos -> target ----
+  function frame(ts){ if(last==null)last=ts; var dt=(ts-last)/1000; last=ts;
+    if(playing && !voiceOn){ target=clamp(target+pxPerSec()*dt); if(target>=contentPx()) playing=false; }
+    pos += (target-pos)*Math.min(1,dt*4); if(Math.abs(target-pos)<0.5)pos=target; apply();
+    requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+
+  function goTop(){ cursor=0; target=0; pos=0; playing=false; apply(); markHere(); setPlayLabel(); }
+  function setPlayLabel(){ document.getElementById('b-play').textContent=playing?'⏸ Pause':'▶ Scroll'; }
+  function setPlay(p){ playing=p; setPlayLabel(); if(p)voiceOff(); last=null; }
+
+  // ====================================================================
+  // voice follow (Web Speech API) — tightened matcher:
+  //   * forward window ~cursor+15 (not +50), small backward tolerance
+  //   * require a CONTIGUOUS run of >=2 matched words ending at p
+  //   * penalize distance from cursor so it stays LOCAL
+  // ====================================================================
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition, recog=null;
+  function onSpeech(t){
+    var spoken=t.trim().split(/\s+/).map(norm).filter(Boolean); if(!spoken.length)return;
+    var tail=spoken.slice(-6);
+    var lo=Math.max(0,cursor-6), hi=Math.min(words.length-1,cursor+15);
+    var bestScore=-1e9, bestEnd=-1;
+    for(var p=lo;p<=hi;p++){
+      // total (possibly non-contiguous) matches across the aligned tail
+      var matched=0;
+      for(var k=0;k<tail.length;k++){ var wi=p-(tail.length-1-k);
+        if(wi>=0&&wi<words.length&&words[wi].norm&&words[wi].norm===tail[k])matched++; }
+      // contiguous run of matches ending exactly at p
+      var crun=0;
+      for(var k2=tail.length-1;k2>=0;k2--){ var wj=p-(tail.length-1-k2);
+        if(wj>=0&&wj<words.length&&words[wj].norm&&words[wj].norm===tail[k2])crun++; else break; }
+      if(crun<2) continue;                       // must make sense internally: a real run, not one stray repeat
+      var dist=Math.abs(p-cursor);
+      var score=matched*3 + crun*2 - dist*0.5;   // reward contiguity, punish jumps
+      if(score>bestScore){ bestScore=score; bestEnd=p; }
+    }
+    if(bestEnd>=0 && bestEnd>=cursor-3){
+      cursor=bestEnd; target=clamp(words[cursor].top-readPx()); markHere();
+    }
+  }
+  function voiceOn_(){
+    if(!navigator.onLine){ toastMsg('Follow-my-voice needs <b>internet</b>. Manual scroll + record still work offline.'); return; }
+    if(!SR){ toastMsg('Follow-my-voice needs <b>Chrome or Edge</b> + internet. Use <b>▶ Scroll</b> or drag the text instead.',6000); return; }
+    if(!stream){ enableCam(true); }  // ensure mic permission context
+    try{ recog=new SR(); }catch(e){ toastMsg('Could not start voice: '+e.message); return; }
+    recog.continuous=true; recog.interimResults=true; recog.lang=lang;
+    recog.onresult=function(e){ var s=''; for(var i=e.resultIndex;i<e.results.length;i++) s+=e.results[i][0].transcript+' '; onSpeech(s); };
+    recog.onend=function(){ if(voiceOn){ try{recog.start();}catch(e){} } };
+    recog.onerror=function(e){
+      if(e.error==='not-allowed'||e.error==='service-not-allowed'){ toastMsg('Mic blocked for voice-follow.'); voiceOff(); }
+      else if(e.error==='network'){ toastMsg('Lost connection — voice-follow paused. <b>Scroll</b> + record still work.',6000); } };
+    try{ recog.start(); voiceOn=true; playing=false; modeEl.textContent='voice-follow'; document.getElementById('b-voice').classList.add('on'); toastMsg('Voice-follow ON — just start reading. It scrolls to you.'); }
+    catch(e){ toastMsg('Voice start error: '+e.message); }
+  }
+  function voiceOff(){ if(!voiceOn)return; voiceOn=false; modeEl.textContent='manual'; document.getElementById('b-voice').classList.remove('on'); if(recog){ try{recog.stop();}catch(e){} } }
+  function toggleVoice(){ if(voiceOn)voiceOff(); else voiceOn_(); }
+
+  // ---- camera + record (front camera, mobile-tuned bitrate/resolution) ----
+  async function enableCam(quiet){
+    try{
+      var adev=micsel.value||undefined;
+      if(stream) stream.getTracks().forEach(function(t){t.stop();});
+      var vw=isMobile?1280:1920, vh=isMobile?720:1080;
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:'user', width:{ideal:vw}, height:{ideal:vh} },
+        audio:{ deviceId:adev?{exact:adev}:undefined, echoCancellation:true, noiseSuppression:true } });
+      cam.srcObject=stream; camoff.style.display='none'; document.getElementById('b-rec').textContent='● Record';
+      var devs=await navigator.mediaDevices.enumerateDevices(), mics=devs.filter(function(d){return d.kind==='audioinput';}), cur=micsel.value;
+      micsel.innerHTML=''; mics.forEach(function(d,i){ var o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||('Mic '+(i+1)); micsel.appendChild(o); }); if(cur)micsel.value=cur;
+    }catch(e){ if(!quiet){ camoff.style.display='grid'; camoff.querySelector('b').textContent='Camera/mic blocked: '+(e.name||e.message); } }
+  }
+  micsel.onchange=function(){ if(stream) enableCam(); };
+
+  // ---- voice-follow language + script direction (RTL for ar/he/fa) ----
+  function isRTL(l){ return /^(ar|he|fa|ur)\b/i.test(l); }
+  function applyDir(){ var rtl=isRTL(lang);
+    scriptBox.dir = rtl?'rtl':'ltr'; scriptBox.style.textAlign = rtl?'right':'';
+    setTimeout(function(){ measure(); if(voiceOn&&words[cursor])target=clamp(words[cursor].top-readPx()); },30); }
+  function setLang(l,fromUser){ lang=l||'en-US'; lsSet(LS_LANG,lang); if(langsel)langsel.value=lang; applyDir();
+    if(voiceOn){ // restart recognizer in the new language
+      try{ if(recog)recog.stop(); }catch(e){}
+      if(recog){ recog.lang=lang; try{ recog.start(); }catch(e){} }
+      if(fromUser) toastMsg('Voice-follow language set. Manual scroll works in <b>any</b> language.',3500);
+    } }
+  langsel.onchange=function(){ setLang(langsel.value,true); };
+  function pickMime(){ var o=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm','video/mp4'];
+    for(var i=0;i<o.length;i++){ try{ if(window.MediaRecorder&&MediaRecorder.isTypeSupported(o[i]))return o[i]; }catch(e){} } return ''; }
+  function toggleRec(){ if(!stream){ enableCam(); return; } if(rec&&rec.state==='recording') stopRec(); else countInThenRec(); }
+  function countInThenRec(){ var n=3; big.style.display='grid'; big.textContent=n;
+    var iv=setInterval(function(){ n--; if(n<=0){ clearInterval(iv); big.style.display='none'; startRec(); } else big.textContent=n; },800); }
+  function startRec(){ chunks=[]; var mt=pickMime(); var vbr=isMobile?2500000:8000000;
+    try{ rec=new MediaRecorder(stream, mt?{mimeType:mt,videoBitsPerSecond:vbr}:undefined); }catch(e){ toastMsg('Recorder error: '+e.message); return; }
+    rec.ondataavailable=function(e){ if(e.data&&e.data.size)chunks.push(e.data); };
+    rec.onstop=function(){ var blob=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||'video/webm'}), url=URL.createObjectURL(blob),
+      ext=(blob.type.indexOf('mp4')>-1)?'mp4':'webm', name='teleprompter-take-'+stamp()+'.'+ext, a=document.createElement('a');
+      a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); toastMsg('Saved <b>'+name+'</b> to your downloads — it stayed on your device.',7000); };
+    rec.start(); recStart=Date.now(); recind.style.display='flex'; document.getElementById('b-rec').classList.add('rec'); document.getElementById('b-rec').textContent='■ Stop';
+    recT=setInterval(function(){ var s=Math.floor((Date.now()-recStart)/1000); rectime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); },500); }
+  function stopRec(){ if(rec&&rec.state!=='inactive')rec.stop(); clearInterval(recT); recind.style.display='none';
+    document.getElementById('b-rec').classList.remove('rec'); document.getElementById('b-rec').textContent='● Record'; }
+  function stamp(){ var d=new Date(),p=function(n){return String(n).padStart(2,'0');}; return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds()); }
+
+  // ---- controls ----
+  function size(d){ var c=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--size'))||40;
+    var nv=Math.max(24,Math.min(110,c+d)); document.documentElement.style.setProperty('--size',nv+'px'); lsSet(LS_SIZE,nv);
+    setTimeout(function(){measure(); if(voiceOn&&words[cursor])target=clamp(words[cursor].top-readPx());},60); }
+  function speed(d){ wpm=Math.max(60,Math.min(400,wpm+d)); wpmEl.textContent=wpm; }
+  function fs(){ if(!document.fullscreenElement){ var r=document.documentElement.requestFullscreen; if(r)r.call(document.documentElement).catch(function(){}); } else document.exitFullscreen(); }
+  function nearestCursor(){ var y=pos+readPx(),bi=0,bd=1e9; for(var i=0;i<words.length;i++){ var dd=Math.abs(words[i].top-y); if(dd<bd){bd=dd;bi=i;} } cursor=bi; markHere(); }
+
+  document.getElementById('b-voice').onclick=toggleVoice;
+  document.getElementById('b-rec').onclick=toggleRec;
+  document.getElementById('b-top').onclick=goTop;
+  document.getElementById('b-play').onclick=function(){ setPlay(!playing); };
+  document.getElementById('b-slow').onclick=function(){ speed(-10); };
+  document.getElementById('b-fast').onclick=function(){ speed(10); };
+  document.getElementById('b-small').onclick=function(){ size(-4); };
+  document.getElementById('b-large').onclick=function(){ size(4); };
+  document.getElementById('b-mir').onclick=function(){ scroller.classList.toggle('mir'); apply(); };
+  document.getElementById('b-full').onclick=fs;
+
+  // ---- editor sheet ----
+  function openEditor(){ scripttext.value = lsGet(LS_SCRIPT) || SAMPLE; editor.classList.add('show'); }
+  function closeEditor(){ editor.classList.remove('show'); }
+  document.getElementById('b-script').onclick=openEditor;
+  document.getElementById('e-cancel').onclick=closeEditor;
+  document.getElementById('e-sample').onclick=function(){ scripttext.value=SAMPLE; };
+  document.getElementById('e-use').onclick=function(){ var t=scripttext.value||SAMPLE; lsSet(LS_SCRIPT,t); renderScript(t); closeEditor(); toastMsg('Script loaded. Tap <b>🎤 Follow my voice</b> or <b>▶ Scroll</b>.'); };
+
+  // ---- help sheet ----
+  function openHelp(){ helpSheet.classList.add('show'); }
+  function closeHelp(){ helpSheet.classList.remove('show'); lsSet(LS_SEEN,'1'); }
+  document.getElementById('b-help').onclick=openHelp;
+  document.getElementById('h-close').onclick=closeHelp;
+
+  // ---- manual scroll: mouse wheel (desktop) + touch drag (mobile) ----
+  window.addEventListener('wheel',function(e){ if(editor.classList.contains('show')||helpSheet.classList.contains('show'))return;
+    e.preventDefault(); target=clamp(target+e.deltaY); pos=target; nearestCursor(); },{passive:false});
+
+  var touchY=null, touchMoved=false;
+  scroller.parentNode===document.body; // scroller is on body
+  document.addEventListener('touchstart',function(e){
+    if(e.target.closest('#bar')||e.target.closest('.sheet'))return;
+    touchY=e.touches[0].clientY; touchMoved=false; poke();
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(touchY==null)return; if(e.target.closest('#bar')||e.target.closest('.sheet'))return;
+    var y=e.touches[0].clientY, dy=touchY-y; if(Math.abs(dy)>2)touchMoved=true;
+    target=clamp(target+dy); pos=target; touchY=y; nearestCursor();
+    if(e.cancelable)e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchend',function(){ touchY=null; },{passive:true});
+
+  // keyboard bonus (desktop)
+  document.addEventListener('keydown',function(e){ if(e.target.tagName==='SELECT'||e.target.tagName==='TEXTAREA')return;
+    if(editor.classList.contains('show')||helpSheet.classList.contains('show')){ if(e.key==='Escape'){closeEditor();closeHelp();} return; }
+    if(e.key===' '){ e.preventDefault(); setPlay(!playing); } else if(e.key==='ArrowUp')speed(10);
+    else if(e.key==='ArrowDown')speed(-10); else if(e.key==='Home')goTop(); else if(e.key==='v'||e.key==='V')toggleVoice();
+    else if(e.key==='r'||e.key==='R')toggleRec(); else if(e.key==='f'||e.key==='F')fs(); });
+
+  // auto-hide bar for clean footage; any tap/move brings it back
+  var hideT; function poke(){ bar.classList.remove('hide'); clearTimeout(hideT); hideT=setTimeout(function(){bar.classList.add('hide');},5000); }
+  document.addEventListener('mousemove',poke);
+  document.addEventListener('pointerdown',function(e){ if(!e.target.closest('.sheet'))poke(); });
+  window.addEventListener('resize',function(){ measure(); if(voiceOn&&words[cursor])target=clamp(words[cursor].top-readPx()); });
+  window.addEventListener('online',function(){ toastMsg('Back online — <b>Follow my voice</b> is available again.'); });
+
+  // ---- offline caching so the tool reopens with no connection ----
+  if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} }
+
+  // ---- boot ----
+  var savedSize=parseInt(lsGet(LS_SIZE)); if(savedSize>=24&&savedSize<=110)document.documentElement.style.setProperty('--size',savedSize+'px');
+  renderScript(lsGet(LS_SCRIPT) || SAMPLE);
+  setLang(lsGet(LS_LANG) || 'en-US');
+  if(!lsGet(LS_SEEN)) openHelp();
+  poke();
+})();
+</script>
+</body>
+</html>
