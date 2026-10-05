@@ -123,6 +123,8 @@
     <span class="btn big" id="b-rec">● Camera</span>
     <span class="sep"></span>
     <span class="btn" id="b-top">⤒ Top</span>
+    <span class="btn" id="b-up">▲</span>
+    <span class="btn" id="b-down">▼</span>
     <span class="btn" id="b-play">▶ Scroll</span>
     <span class="lbl">speed</span>
     <span class="btn" id="b-slow">−</span><span class="btn" id="b-fast">+</span>
@@ -412,6 +414,9 @@
   document.getElementById('b-voice').onclick=toggleVoice;
   document.getElementById('b-rec').onclick=toggleRec;
   document.getElementById('b-top').onclick=goTop;
+  function nudge(px){ setPlay(false); target=clamp(target+px); nearestCursor(); }
+  document.getElementById('b-up').onclick=function(){ nudge(-window.innerHeight*0.28); };
+  document.getElementById('b-down').onclick=function(){ nudge(window.innerHeight*0.28); };
   document.getElementById('b-play').onclick=function(){ setPlay(!playing); };
   document.getElementById('b-slow').onclick=function(){ speed(-10); };
   document.getElementById('b-fast').onclick=function(){ speed(10); };
