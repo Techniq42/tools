@@ -358,15 +358,30 @@
       var adev=micsel.value||undefined;
       if(stream) stream.getTracks().forEach(function(t){t.stop();});
       var r=targetRes(); var vw=r.w, vh=r.h;
-      stream=await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode:'user', width:{ideal:vw}, height:{ideal:vh} },
-        audio:{ deviceId:adev?{exact:adev}:undefined, echoCancellation:true, noiseSuppression:true } });
+      var vcon={ facingMode:'user', width:{ideal:vw}, height:{ideal:vh} };
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({ video:vcon,
+          audio:{ deviceId:adev?{exact:adev}:undefined, echoCancellation:true, noiseSuppression:true } });
+      }catch(e1){
+        // a remembered mic that is unplugged/renamed fails the whole request: retry on the default mic
+        if(adev && (e1.name==='OverconstrainedError'||e1.name==='NotFoundError')){
+          stream=await navigator.mediaDevices.getUserMedia({ video:vcon, audio:{ echoCancellation:true, noiseSuppression:true } });
+        } else throw e1;
+      }
       cam.srcObject=stream; camoff.style.display='none'; document.getElementById('b-rec').textContent='● Record';
       try{ var vt0=stream.getVideoTracks()[0], st0=(vt0&&vt0.getSettings)?vt0.getSettings():{};
         if(st0.width){ toastMsg('Camera ready: <b>'+st0.width+'×'+st0.height+'</b> ('+(quality==='auto'?'Auto':quality+'p')+').',3500); } }catch(e){}
       var devs=await navigator.mediaDevices.enumerateDevices(), mics=devs.filter(function(d){return d.kind==='audioinput';}), cur=micsel.value;
       micsel.innerHTML=''; mics.forEach(function(d,i){ var o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||('Mic '+(i+1)); micsel.appendChild(o); }); if(cur)micsel.value=cur;
-    }catch(e){ if(!quiet){ camoff.style.display='grid'; camoff.querySelector('b').textContent='Camera/mic blocked: '+(e.name||e.message); } }
+    }catch(e){ if(!quiet){ var why=camWhy(e); camoff.style.display='grid'; camoff.querySelector('b').textContent=why; toastMsg(why,12000); } }
+  }
+  // plain-language reason + the fix, so a blocked camera never just looks like a dead button
+  function camWhy(e){
+    var n=e&&e.name;
+    if(n==='NotAllowedError'||n==='SecurityError') return 'Camera or mic is blocked for this page. Click the lock/camera icon left of the address bar, set Camera and Microphone to Allow, then reload. (On Windows also check Settings > Privacy > Camera.)';
+    if(n==='NotReadableError'||n==='AbortError') return 'Another app is using the camera (Zoom, Teams, the Camera app, OBS, or another browser tab). Close it, then tap Camera again.';
+    if(n==='NotFoundError'||n==='OverconstrainedError') return 'No camera or mic found. Plug one in or pick a different mic, then tap Camera again.';
+    return 'Camera could not start: '+((e&&(e.name||e.message))||'unknown error')+'. Reload and tap Camera again.';
   }
   micsel.onchange=function(){ if(stream) enableCam(); };
 
