@@ -2,7 +2,7 @@
    NETWORK-FIRST: when online you always get the latest version (and the cache
    is refreshed in the background); when offline it falls back to the cached
    copy so manual scroll + record still work with no connection. */
-var CACHE='flp-v9';
+var CACHE='flp-v10';
 var ASSETS=['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
 self.addEventListener('install',function(e){
   self.skipWaiting();
