@@ -15,7 +15,7 @@ Each tool lives in its own folder.
 | Tool | What it does | Live |
 |------|--------------|------|
 | [`teleprompter/`](teleprompter/) | A teleprompter that **follows your voice** and scrolls to keep pace with you; optional local webcam recording. | https://gather.livingsys.org/tools/teleprompter/ |
-| `cutting-board/` | An in-browser video editor (trim, cut, convert) powered by ffmpeg running locally in the browser. | https://gather.livingsys.org/tools/cutting-board/ |
+| [`cutting-board/`](cutting-board/) | An in-browser video editor (trim, cut, convert) powered by ffmpeg running locally in the browser. | https://gather.livingsys.org/tools/cutting-board/ |
 
 More tools land here over time. A folder per tool; nothing shared between them
 except this license and the house style.
