@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Cutting Board — in-browser video editor</title>
+<meta name="description" content="A free, private, in-browser video editor. Trim, join, caption, extract audio, and convert formats — everything runs on your device, nothing is uploaded." />
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root{
+    --bg:#241A10; --panel:#302516; --panel2:#2B2013; --line:#4C3B22; --line2:#5F4A2B;
+    --ink:#F1E9D7; --dim:#BBB097; --ember:#E58C3E; --ember-dim:#B96F2E;
+    --ok:#8CC06E; --ok-ink:#E2F2D2; --warn:#3A2A0F; --warn-ink:#EDC163; --err:#3A1410; --err-ink:#FFD7D4;
+    --r:12px;
+  }
+  /* gather dispatch chrome */
+  .firebg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;opacity:.42}
+  .firebg video{width:100%;height:100%;object-fit:cover}
+  .firebg .veil{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(18,12,5,.50),rgba(18,12,5,.80))}
+  .gh{display:grid;grid-template-columns:auto 1fr;gap:1rem 1.2rem;align-items:center;padding:14px 2px 1rem;margin:0 0 1.2rem;border-bottom:1px solid var(--line)}
+  .gh .mark{width:52px;height:52px;object-fit:contain}
+  .gh .word{font-family:'Archivo',sans-serif;font-weight:700;font-size:1.05rem;line-height:1.2;margin:0;letter-spacing:.01em;color:var(--ink)}
+  .gh .word span{color:var(--dim);font-weight:600}
+  .gh .where{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:.3rem 0 0}
+  .gh .where a{color:var(--ember);text-decoration:none}
+  #linkrow{display:flex;gap:8px;margin:-6px 0 16px}
+  #linkrow input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+    padding:10px 12px;color:var(--ink);font:inherit;font-size:13.5px}
+  #linkrow input::placeholder{color:var(--dim)}
+  #linkrow input:focus{outline:none;border-color:var(--ember)}
+  #linkrow button{background:var(--panel);border:1px solid var(--ember);color:var(--ember);border-radius:10px;
+    padding:10px 16px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  #linkrow button:hover{background:var(--panel2)}
+
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+    font-family:'Archivo',system-ui,sans-serif;-webkit-text-size-adjust:100%}
+  body{padding:max(14px,env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom))}
+  a{color:var(--ember)}
+  .wrap{max-width:860px;margin:0 auto}
+
+  header{padding:8px 2px 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .brandrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{font-size:26px;margin:0;letter-spacing:.3px;font-weight:800}
+  h1 .em{color:var(--ember)}
+  .kicker{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--dim);font-weight:700}
+  .tag{margin:10px 0 0;color:var(--dim);font-size:14.5px;line-height:1.55;max-width:60ch}
+  .tag b{color:var(--ink)}
+
+  .notes{display:flex;flex-direction:column;gap:7px;margin:14px 0 2px}
+  .chip{display:flex;gap:9px;align-items:flex-start;font-size:12.8px;line-height:1.5;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--dim)}
+  .chip b{color:var(--ink)} .chip .i{color:var(--ember);flex:none;font-weight:800}
+
+  /* engine status */
+  #engine{display:flex;align-items:center;gap:10px;margin:16px 0 6px;padding:11px 13px;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;color:var(--dim)}
+  #engine .dot{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none}
+  #engine.loading .dot{background:var(--ember);animation:pulse 1s infinite}
+  #engine.ready .dot{background:var(--ok)}
+  #engine.err .dot{background:#ff3b30}
+  #engine b{color:var(--ink)}
+  @keyframes pulse{50%{opacity:.3}}
+
+  /* drop / load zone */
+  #drop{margin:16px 0;border:1.5px dashed var(--line2);border-radius:var(--r);background:var(--panel);
+    padding:26px 18px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  #drop:hover,#drop.hot{border-color:var(--ember);background:var(--panel2)}
+  #drop .big{font-size:16px;color:var(--ink);font-weight:700}
+  #drop .sub{font-size:13px;color:var(--dim);margin-top:6px}
+
+  /* clip list */
+  #clips{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+  .clip{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:9px 11px}
+  .clip.sel{border-color:var(--ember)}
+  .clip .n{flex:1;min-width:0}
+  .clip .n .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .clip .n .m{font-size:11.5px;color:var(--dim);margin-top:2px}
+  .clip .x{cursor:pointer;color:var(--dim);border:1px solid var(--line2);border-radius:8px;
+    padding:6px 10px;font-size:13px;flex:none}
+  .clip .x:hover{color:var(--err-ink);border-color:#80403a}
+  .clip .use{cursor:pointer;color:var(--dim);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-size:12.5px;flex:none}
+  .clip.sel .use{color:var(--ember);border-color:var(--ember)}
+
+  /* preview */
+  .previews{display:grid;gap:14px;margin:14px 0;grid-template-columns:1fr}
+  @media(min-width:680px){ .previews.two{grid-template-columns:1fr 1fr} }
+  .pv{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .pv .cap{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:700;padding:9px 12px 0}
+  .pv video{width:100%;display:block;background:#000;aspect-ratio:16/9;object-fit:contain}
+  .pv .foot{padding:9px 12px 11px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  /* tabs */
+  .tabs{display:flex;gap:7px;flex-wrap:wrap;margin:20px 0 0}
+  .tab{cursor:pointer;background:var(--panel2);border:1px solid var(--line2);color:var(--dim);
+    border-radius:10px 10px 0 0;padding:11px 15px;font-size:14px;font-weight:700;min-height:44px}
+  .tab.on{background:var(--panel);color:var(--ink);border-color:var(--ember);border-bottom-color:var(--panel)}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:0 12px 12px 12px;padding:18px}
+  .panel h2{font-size:15px;margin:0 0 4px;letter-spacing:.3px}
+  .panel .hint{font-size:13px;color:var(--dim);line-height:1.55;margin:0 0 14px;max-width:62ch}
+
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:12px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase;font-weight:700}
+  input[type=text],input[type=number],select,textarea{
+    background:#0e0e12;color:var(--ink);border:1px solid var(--line2);border-radius:9px;
+    padding:11px 12px;font-size:15px;font-family:inherit;min-height:44px}
+  textarea{min-height:70px;resize:vertical;line-height:1.4}
+  input[type=number]{width:120px}
+  .seg{display:flex;gap:0;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+  .seg button{background:#0e0e12;color:var(--dim);border:0;border-right:1px solid var(--line2);
+    padding:11px 15px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--panel2);color:var(--ember)}
+
+  .btn{cursor:pointer;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
+    border-radius:10px;padding:12px 18px;font-size:15px;font-weight:700;letter-spacing:.3px;
+    min-height:46px;user-select:none;display:inline-flex;align-items:center;gap:8px;justify-content:center}
+  .btn:hover{background:#20202a}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.go{background:#2a1405;border-color:var(--ember);color:#ffd9b8}
+  .btn.go:hover{background:#3a1c08}
+  .btn.ghost{background:transparent}
+
+  /* progress + log */
+  #work{margin:18px 0 0;display:none}
+  #work.show{display:block}
+  .bar{height:10px;background:#0e0e12;border:1px solid var(--line2);border-radius:99px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ember-dim),var(--ember));transition:width .2s}
+  .worktop{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--dim);margin:0 0 7px}
+  .worktop b{color:var(--ink)}
+  details.log{margin-top:10px}
+  details.log summary{cursor:pointer;font-size:12.5px;color:var(--dim)}
+  pre#logbox{margin:8px 0 0;max-height:160px;overflow:auto;background:#060608;border:1px solid var(--line);
+    border-radius:9px;padding:10px;font-size:11.5px;line-height:1.5;color:#9aa; white-space:pre-wrap;word-break:break-word}
+
+  .alert{border-radius:10px;padding:11px 13px;font-size:13.5px;line-height:1.5;margin:12px 0;display:none}
+  .alert.show{display:block}
+  .alert.warn{background:var(--warn);border:1px solid #6a5118;color:var(--warn-ink)}
+  .alert.err{background:var(--err);border:1px solid #80403a;color:var(--err-ink)}
+  .alert.ok{background:#13261a;border:1px solid var(--ok);color:var(--ok-ink)}
+
+  footer{margin:34px 0 0;padding:18px 2px 0;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px;line-height:1.7}
+  footer b{color:var(--ink)} footer .em{color:var(--ember)}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="firebg" aria-hidden="true"><video autoplay muted loop playsinline poster="/media/fire-poster.jpg"><source src="/media/fire-loop.mp4" type="video/mp4"></video><div class="veil"></div></div>
+<div class="wrap">
+  <div class="gh">
+    <img class="mark" src="/media/camp-synthesis-mark.png" alt="Camp Synthesis mark: a crystal seed sprouting two leaves over roots, a heartbeat line through it">
+    <div>
+      <p class="word">Fellowship of Living Systems <span>tools</span></p>
+      <p class="where"><a href="/tools/">&larr; all tools</a></p>
+    </div>
+  </div>
+
+  <header>
+    <div class="brandrow">
+      <span class="kicker">practitioner tools</span>
+    </div>
+    <div class="brandrow" style="margin-top:6px">
+      <h1>Cutting <span class="em">Board</span></h1>
+    </div>
+    <p class="tag">A small, honest video editor that runs <b>entirely in your browser</b>. Trim a clip, join a few together, burn in a caption, pull the audio, or switch between MP4 and WebM. <b>Nothing is uploaded</b> — the video never leaves your device.</p>
+
+    <div class="notes">
+      <div class="chip"><span class="i">●</span><span><b>Private by design.</b> Every edit happens on your own machine with <b>ffmpeg.wasm</b>. No account, no upload, no server, <b>$0</b>.</span></div>
+      <div class="chip"><span class="i">●</span><span><b>Built for short clips.</b> Great for trims, titles, and stitching a few phone clips. Very large or 4K files may be slow or run out of memory — this is not a 4K feature NLE.</span></div>
+      <div class="chip"><span class="i">●</span><span><b>First run downloads ~30&nbsp;MB</b> of editor engine (once, then cached by your browser). Needs a connection the first time; works on phones and laptops.</span></div>
+    </div>
+  </header>
+
+  <div id="engine"><span class="dot"></span><span id="engineTxt">Editor engine will load the first time you run an edit.</span></div>
+
+  <div id="drop" tabindex="0" role="button" aria-label="Load video files">
+    <div class="big">Drop a video here, or tap to choose</div>
+    <div class="sub">MP4, WebM, MOV, MKV and more · you can add several for joining</div>
+    <input id="file" type="file" accept="video/*" multiple class="hide" />
+  </div>
+
+  <div id="linkrow">
+    <input id="linkurl" type="url" placeholder="&hellip;or paste a direct video link (https://&hellip;/clip.mp4)" aria-label="Video link to load" />
+    <button id="linkbtn" type="button">Load link</button>
+  </div>
+
+  <div id="bigfile" class="alert warn"></div>
+
+  <div id="clips"></div>
+
+  <div class="previews" id="previews">
+    <div class="pv" id="pvIn">
+      <div class="cap">Source</div>
+      <video id="vidIn" controls playsinline preload="metadata"></video>
+      <div class="foot"><span class="hint" id="inMeta" style="margin:0">Load a clip to begin.</span></div>
+    </div>
+    <div class="pv hide" id="pvOut">
+      <div class="cap">Result</div>
+      <video id="vidOut" controls playsinline preload="metadata"></video>
+      <div class="foot"><a class="btn go" id="dl" download>⤓ Download result</a><span class="hint" id="outMeta" style="margin:0"></span></div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-t="trim">Trim</div>
+    <div class="tab" data-t="join">Join</div>
+    <div class="tab" data-t="caption">Caption</div>
+    <div class="tab" data-t="audio">Extract audio</div>
+    <div class="tab" data-t="convert">Convert</div>
+  </div>
+
+  <!-- TRIM -->
+  <section class="panel" id="p-trim">
+    <h2>Trim a clip</h2>
+    <p class="hint">Set an in-point and an out-point, then export just that stretch. Use the buttons to grab the time from the source player as you scrub.</p>
+    <div class="row">
+      <div class="field"><label>In (seconds)</label><input id="tIn" type="number" min="0" step="0.1" value="0"></div>
+      <button class="btn" id="tInNow">⟵ Set in to playhead</button>
+    </div>
+    <div class="row">
+      <div class="field"><label>Out (seconds)</label><input id="tOut" type="number" min="0" step="0.1" value="0"></div>
+      <button class="btn" id="tOutNow">Set out to playhead ⟶</button>
+    </div>
+    <div class="row">
+      <div class="field"><label>Output</label>
+        <div class="seg" id="tFmt"><button data-v="mp4" class="on">MP4</button><button data-v="webm">WebM</button><button data-v="copy">Keep original (fast)</button></div>
+      </div>
+    </div>
+    <p class="hint">MP4 / WebM re-encode for frame-accurate cuts. <b>Keep original</b> is much faster but cuts land on the nearest keyframe, so the start can be slightly off.</p>
+    <button class="btn go" id="runTrim">✂ Trim &amp; export</button>
+  </section>
+
+  <!-- JOIN -->
+  <section class="panel hide" id="p-join">
+    <h2>Join clips end to end</h2>
+    <p class="hint">Add two or more clips above (drop or tap the zone again to add more). They'll be stitched in the order listed — drag isn't needed, remove and re-add to reorder. Clips are normalised to <b>1280×720, 30&nbsp;fps</b> so mismatched sizes still line up, so this one re-encodes everything and is the slowest operation.</p>
+    <div id="joinList" class="hint" style="margin-bottom:14px">No clips loaded yet.</div>
+    <button class="btn go" id="runJoin">⛓ Join &amp; export MP4</button>
+  </section>
+
+  <!-- CAPTION -->
+  <section class="panel hide" id="p-caption">
+    <h2>Burn in a caption or title</h2>
+    <p class="hint">Text is rendered permanently onto the picture. Good for a title card line or a lower-third. Keep it short.</p>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:240px"><label>Caption text</label><textarea id="capText" placeholder="e.g. The Long Table — Camp Synthesis 2026"></textarea></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Position</label>
+        <div class="seg" id="capPos"><button data-v="top">Top</button><button data-v="mid">Middle</button><button data-v="bot" class="on">Bottom</button></div>
+      </div>
+      <div class="field"><label>Size</label>
+        <div class="seg" id="capSize"><button data-v="s">S</button><button data-v="m" class="on">M</button><button data-v="l">L</button></div>
+      </div>
+      <div class="field"><label>Colour</label>
+        <div class="seg" id="capColor"><button data-v="white" class="on">White</button><button data-v="ember">Ember</button></div>
+      </div>
+      <div class="field"><label>Backing</label>
+        <div class="seg" id="capBox"><button data-v="box" class="on">Shade</button><button data-v="none">None</button></div>
+      </div>
+    </div>
+    <button class="btn go" id="runCap">🅣 Burn caption &amp; export</button>
+  </section>
+
+  <!-- AUDIO -->
+  <section class="panel hide" id="p-audio">
+    <h2>Extract the audio</h2>
+    <p class="hint">Pull the soundtrack out of a clip as a standalone audio file — handy for podcasts, transcripts, or a voice reference.</p>
+    <div class="row">
+      <div class="field"><label>Format</label>
+        <div class="seg" id="auFmt"><button data-v="mp3" class="on">MP3</button><button data-v="wav">WAV (uncompressed)</button></div>
+      </div>
+    </div>
+    <button class="btn go" id="runAudio">♪ Extract audio</button>
+  </section>
+
+  <!-- CONVERT -->
+  <section class="panel hide" id="p-convert">
+    <h2>Convert the format</h2>
+    <p class="hint">Switch a clip between MP4 (H.264 / AAC — plays almost everywhere) and WebM (VP9 / Opus — open and web-friendly).</p>
+    <div class="row">
+      <div class="field"><label>Convert to</label>
+        <div class="seg" id="cvFmt"><button data-v="mp4" class="on">MP4</button><button data-v="webm">WebM</button></div>
+      </div>
+    </div>
+    <button class="btn go" id="runConvert">⇄ Convert &amp; export</button>
+  </section>
+
+  <!-- WORK -->
+  <div id="work">
+    <div class="worktop"><span id="workLabel">Working…</span><b id="workPct">0%</b></div>
+    <div class="bar"><i id="workFill"></i></div>
+    <details class="log"><summary>Show engine log</summary><pre id="logbox"></pre></details>
+  </div>
+
+  <div id="alert" class="alert"></div>
+
+  <footer>
+    <p><b>Cutting Board</b> — a <b>Fellowship of Living Systems</b> practitioner tool, part of the free tool shelf. The pattern: we needed it, we aimed the AI at it, and we gave it away.</p>
+    <p><b>Privacy:</b> everything runs in your browser — your video is never uploaded and never leaves your device. <b>Limits:</b> built for short clips, trims and titles; very large or 4K files may be slow or run out of memory (browsers cap this kind of work around 2–4&nbsp;GB).</p>
+    <p><b>Licenses &amp; source.</b> This tool is a single static page — its full source is this page (<b>view source</b>), released under the <b>Apache&nbsp;License&nbsp;2.0</b>; its wording and design under <b>CC&nbsp;BY&nbsp;4.0</b>. The editing is done by <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener">ffmpeg.wasm</a>, a WebAssembly build of <a href="https://ffmpeg.org/" target="_blank" rel="noopener">FFmpeg</a>, loaded at runtime from a public CDN (unpkg) — not redistributed from this server. <b>FFmpeg and ffmpeg.wasm are free software under the LGPL/GPL</b>; their complete corresponding source is published and downloadable: FFmpeg at <a href="https://github.com/FFmpeg/FFmpeg" target="_blank" rel="noopener">github.com/FFmpeg/FFmpeg</a> and the WebAssembly build at <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">github.com/ffmpegwasm/ffmpeg.wasm</a>. The caption typeface is <a href="https://github.com/rsms/inter" target="_blank" rel="noopener">Inter</a> (SIL Open Font License). Fork it, clone it, carry the byline — the tool was never the asset.</p>
+  </footer>
+
+<!-- gather-chrome:gf -->
+<style>
+  .gf{ margin-top:3rem; padding-top:1.6rem; border-top:1px solid var(--rule); display:grid; grid-template-columns:repeat(auto-fit, minmax(14rem, 1fr)); gap:1.2rem 2rem; font-family:'IBM Plex Mono', monospace; font-size:.76rem; letter-spacing:.03em; color:var(--faint); line-height:1.7; }
+  .gf .col .t{ font-weight:600; font-size:.66rem; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin:0 0 .3rem; }
+  .gf a{ color:var(--muted); text-decoration:none; }
+  .gf a:hover{ color:var(--ink); }
+  .gf .line{ grid-column:1 / -1; padding-top:1rem; border-top:1px solid var(--rule); display:flex; flex-wrap:wrap; gap:.4rem 1.6rem; justify-content:space-between; }
+  .gf .line .mark{ color:var(--accent); font-weight:600; }
+  .wrap > .gf{ width:min(78rem, calc(100vw - 2.8rem)); position:relative; left:50%; transform:translateX(-50%); margin-top:3rem; }
+</style>
+<footer class="gf">
+    <div class="col"><p class="t">Camp Synthesis</p><a href="/">The hearth</a><br><a href="/sync/">Sync your system</a><br><a href="/wiring/">What the AI actually does</a><br><a href="/sync/#program">The program</a></div>
+    <div class="col"><p class="t">The Gathering US</p><a href="https://regenworld.net" target="_blank" rel="noopener">Tickets and the full schedule</a><br>Camp Navarro, Mendocino County<br>October 15 to 18, 2026<br>Produced by RegenWorld</div>
+    <div class="col"><p class="t">Hosts</p><a href="https://livingsys.org" target="_blank" rel="noopener">Fellowship of Living Systems</a><br><a href="https://blossominglotussound.net" target="_blank" rel="noopener">Blossoming Lotus Sound</a> (Melissa DeRenzo)<br><a href="https://shannondobbs.com" target="_blank" rel="noopener">Shannon Dobbs</a><br><a href="mailto:hello@livingsys.org">hello@livingsys.org</a></div>
+    <div class="col"><p class="t">The build</p><a href="https://github.com/Techniq42/fls-membrane" target="_blank" rel="noopener">Free on GitHub, Apache-2.0</a><br><a href="https://shannondobbs.com/vps/" target="_blank" rel="noopener">The story of the box</a><br><a href="https://shannondobbs.com/vps/start/" target="_blank" rel="noopener">The safe start</a><br>This site runs on the box it describes.</div>
+    <div class="line"><span>A field dispatch from Fellowship of Living Systems &middot; words CC BY 4.0 &middot; build Apache-2.0</span><span class="mark">gather.livingsys.org</span></div>
+  </footer>
+<!-- /gather-chrome:gf -->
+</div>
+
+<script type="module">
+import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
+import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
+/* ---------- element shortcuts ---------- */
+const $ = s => document.querySelector(s);
+const engineEl=$('#engine'), engineTxt=$('#engineTxt');
+const drop=$('#drop'), fileInput=$('#file'), clipsEl=$('#clips');
+const vidIn=$('#vidIn'), vidOut=$('#vidOut'), pvOut=$('#pvOut'), previews=$('#previews');
+const inMeta=$('#inMeta'), outMeta=$('#outMeta'), dl=$('#dl');
+const work=$('#work'), workLabel=$('#workLabel'), workPct=$('#workPct'), workFill=$('#workFill'), logbox=$('#logbox');
+const alertEl=$('#alert'), bigfile=$('#bigfile');
+
+/* ---------- state ---------- */
+let ffmpeg=null, loadingPromise=null;
+let clips=[];            // {id, file, name, size}
+let selId=null;          // selected clip id for single-clip ops
+let lastOutURL=null;
+const ISOLATED = (self.crossOriginIsolated===true) && (typeof SharedArrayBuffer!=='undefined');
+const FFMPEG_VER='0.12.10';
+const CORE_VER='0.12.10';
+let usingMT=false;
+
+/* ---------- small helpers ---------- */
+const fmtBytes=b=>{ if(b<1024)return b+' B'; const u=['KB','MB','GB']; let i=-1; do{b/=1024;i++;}while(b>=1024&&i<2); return b.toFixed(b<10?1:0)+' '+u[i]; };
+const fmtTime=s=>{ if(!isFinite(s))return '—'; s=Math.max(0,s); const m=Math.floor(s/60), r=(s%60); return m+':'+String(Math.floor(r)).padStart(2,'0'); };
+function showAlert(kind,html){ alertEl.className='alert show '+kind; alertEl.innerHTML=html; }
+function clearAlert(){ alertEl.className='alert'; }
+function log(line){ logbox.textContent += line+'\n'; logbox.scrollTop=logbox.scrollHeight; }
+function setWork(show,label){ work.classList.toggle('show',show); if(label)workLabel.textContent=label; if(show){workFill.style.width='0%';workPct.textContent='0%';} }
+function setPct(p){ const v=Math.max(0,Math.min(100,Math.round(p*100))); workFill.style.width=v+'%'; workPct.textContent=v+'%'; }
+const sanitize=n=>n.replace(/[^a-zA-Z0-9._-]/g,'_');
+const extOf=n=>{ const m=/\.([a-z0-9]+)$/i.exec(n); return m?m[1].toLowerCase():'mp4'; };
+const baseOf=n=>n.replace(/\.[^.]+$/,'');
+
+/* ---------- engine load (lazy, feature-detected) ----------
+   CDN loading of ffmpeg.wasm 0.12 has one real trap: the worker.
+   - The classic UMD worker is self-contained but is fetched relative to the
+     CDN script origin -> cross-origin -> SecurityError.
+   - Passing classWorkerURL makes FFmpeg spawn a *module* worker; the raw ESM
+     worker.js then can't resolve its own ./const.js siblings from a blob.
+   The fix (validated end-to-end): classWorkerURL = a tiny blob MODULE that just
+   `import`s the real ESM worker by ABSOLUTE url, so the worker resolves its
+   siblings against the CDN, and in module-worker mode it dynamic-import()s the
+   ESM core (the .default factory). So we use the ESM core, not the UMD core. */
+async function loadWith(mt){
+  const ff=new FFmpeg();
+  ff.on('log',({message})=>{ if(message) log(message); });
+  ff.on('progress',({progress})=>{ if(isFinite(progress)) setPct(progress); });
+  const shim=`import "https://unpkg.com/@ffmpeg/ffmpeg@${FFMPEG_VER}/dist/esm/worker.js";`;
+  const classWorkerURL=URL.createObjectURL(new Blob([shim],{type:'text/javascript'}));
+  const pkg = mt ? 'core-mt' : 'core';
+  const base = `https://unpkg.com/@ffmpeg/${pkg}@${CORE_VER}/dist/esm`;
+  // MT trap: the core-mt pthread worker is handed to `new Worker(workerURL)`
+  // directly — a raw cross-origin CDN url there throws SecurityError (and the
+  // worker's own importScripts of the core would also be blocked under COEP).
+  // Fix: blob-URL the core + pthread worker so both are same-origin. (ST's ESM
+  // core is dynamic-import()ed by the module worker, so raw CDN is fine there.)
+  const cfg={
+    classWorkerURL,
+    coreURL: mt ? await toBlobURL(`${base}/ffmpeg-core.js`,'text/javascript') : `${base}/ffmpeg-core.js`,
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`,'application/wasm'),
+  };
+  if(mt) cfg.workerURL = await toBlobURL(`${base}/ffmpeg-core.worker.js`,'text/javascript');
+  // guard against a silent hang (bad combo) so we can fall back
+  await Promise.race([
+    ff.load(cfg),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('engine load timed out')),45000)),
+  ]);
+  return ff;
+}
+async function ensureFFmpeg(){
+  if(ffmpeg) return ffmpeg;
+  if(loadingPromise) return loadingPromise;
+  loadingPromise=(async()=>{
+    engineEl.className='loading';
+    engineTxt.innerHTML = 'Loading editor engine (~30&nbsp;MB, first time only)…';
+    let ff;
+    if(ISOLATED){
+      // cross-origin isolated -> try the faster multi-threaded core, fall back to single-threaded
+      try{ ff=await loadWith(true); usingMT=true; }
+      catch(e){ log('multi-threaded core unavailable ('+(e.message||e)+'); using single-threaded.'); ff=await loadWith(false); usingMT=false; }
+    } else {
+      ff=await loadWith(false); usingMT=false;
+    }
+    ffmpeg=ff;
+    engineEl.className='ready';
+    engineTxt.innerHTML = `Editor engine ready. <b>${usingMT?'Multi-threaded':'Single-threaded'}</b> core — ${usingMT?'cross-origin isolated, faster.':'runs anywhere, no special headers needed.'}`;
+    return ff;
+  })().catch(err=>{
+    engineEl.className='err';
+    engineTxt.innerHTML='Could not load the editor engine. Check your connection and that the page is served over <b>http(s)</b> (not opened as a bare <code>file://</code>), then reload.';
+    loadingPromise=null;
+    throw err;
+  });
+  return loadingPromise;
+}
+
+/* try to warm the engine in the background once a file is loaded (non-blocking) */
+function warm(){ ensureFFmpeg().catch(()=>{}); }
+
+/* ---------- font for captions (fetched on demand) ---------- */
+let fontLoaded=false;
+async function ensureFont(ff){
+  if(fontLoaded) return;
+  const urls=[
+    `https://cdn.jsdelivr.net/npm/@expo-google-fonts/inter@0.2.3/Inter_700Bold.ttf`,
+    `https://unpkg.com/@expo-google-fonts/inter@0.2.3/Inter_700Bold.ttf`,
+  ];
+  let data=null,lastErr=null;
+  for(const u of urls){ try{ data=await fetchFile(u); break; }catch(e){ lastErr=e; } }
+  if(!data) throw new Error('font fetch failed: '+(lastErr&&lastErr.message));
+  await ff.writeFile('font.ttf', data);
+  fontLoaded=true;
+}
+
+/* ---------- clip management ---------- */
+let idc=0;
+function addFiles(list){
+  clearAlert();
+  const vids=[...list].filter(f=>/^video\//.test(f.type) || /\.(mp4|webm|mov|mkv|m4v|avi|ogv|3gp)$/i.test(f.name));
+  if(!vids.length){ showAlert('warn','Those didn’t look like video files. Try MP4, WebM, MOV or MKV.'); return; }
+  let big=0;
+  vids.forEach(f=>{
+    if(f.size>500*1024*1024) big=Math.max(big,f.size);
+    clips.push({id:++idc, file:f, name:f.name, size:f.size});
+  });
+  if(!selId && clips.length) select(clips[clips.length-1].id);
+  renderClips();
+  if(big){
+    bigfile.className='alert warn show';
+    bigfile.innerHTML=`Heads up: a file you added is <b>${fmtBytes(big)}</b>. In-browser editing holds video in memory, so files over ~500&nbsp;MB (or anything 4K) may be slow or fail. Short clips work best.`;
+  } else { bigfile.className='alert'; }
+  warm();
+}
+function select(id){ selId=id; renderClips(); loadPreview(); }
+function removeClip(id){
+  clips=clips.filter(c=>c.id!==id);
+  if(selId===id){ selId=clips.length?clips[clips.length-1].id:null; loadPreview(); }
+  renderClips();
+}
+function renderClips(){
+  clipsEl.innerHTML='';
+  clips.forEach((c,i)=>{
+    const el=document.createElement('div');
+    el.className='clip'+(c.id===selId?' sel':'');
+    el.innerHTML=`<div class="n"><div class="t">${i+1}. ${escapeHtml(c.name)}</div><div class="m">${fmtBytes(c.size)}</div></div>
+      <span class="use" data-use="${c.id}">${c.id===selId?'✓ selected':'use'}</span>
+      <span class="x" data-rm="${c.id}">remove</span>`;
+    clipsEl.appendChild(el);
+  });
+  // join list
+  const jl=$('#joinList');
+  if(clips.length<2){ jl.textContent = clips.length? 'Add at least one more clip to join (you have 1).' : 'No clips loaded yet.'; }
+  else { jl.innerHTML = '<b>'+clips.length+' clips</b> will be joined in this order: '+clips.map((c,i)=>(i+1)+'. '+escapeHtml(c.name)).join(' → '); }
+}
+function escapeHtml(s){ return s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+const selClip=()=>clips.find(c=>c.id===selId)||null;
+
+function loadPreview(){
+  const c=selClip();
+  if(!c){ vidIn.removeAttribute('src'); vidIn.load(); inMeta.textContent='Load a clip to begin.'; return; }
+  const url=URL.createObjectURL(c.file);
+  vidIn.src=url;
+  vidIn.onloadedmetadata=()=>{ inMeta.innerHTML=`<b>${escapeHtml(c.name)}</b> · ${fmtTime(vidIn.duration)} · ${fmtBytes(c.size)}`;
+    // seed trim out to full duration if unset
+    if(+$('#tOut').value===0 && isFinite(vidIn.duration)) $('#tOut').value=vidIn.duration.toFixed(1);
+  };
+}
+
+/* ---------- output handling ---------- */
+function showResult(data, outName, mime){
+  if(lastOutURL) URL.revokeObjectURL(lastOutURL);
+  const blob=new Blob([data.buffer], {type:mime});
+  lastOutURL=URL.createObjectURL(blob);
+  pvOut.classList.remove('hide'); previews.classList.add('two');
+  vidOut.src=lastOutURL;   // a <video> element plays audio-only files too (just no picture)
+  dl.href=lastOutURL; dl.download=outName;
+  outMeta.innerHTML=`<b>${escapeHtml(outName)}</b> · ${fmtBytes(blob.size)}`;
+  showAlert('ok','Done — <b>'+escapeHtml(outName)+'</b> is ready. Tap <b>Download result</b> to save it. Nothing was uploaded.');
+}
+
+/* ---------- probe: does an input have an audio stream? ---------- */
+async function hasAudio(ff, name){
+  let txt='';
+  const grab=({message})=>{ txt+=message+'\n'; };
+  ff.on('log',grab);
+  try{ await ff.exec(['-hide_banner','-i',name]); }catch(e){ /* ffmpeg exits non-zero with only -i, that's fine */ }
+  ff.off('log',grab);
+  return /Stream #\d+:\d+.*: Audio/i.test(txt);
+}
+
+/* ---------- run wrapper ---------- */
+let busy=false;
+async function run(label, fn){
+  if(busy){ showAlert('warn','One edit at a time — let the current job finish.'); return; }
+  busy=true; clearAlert(); logbox.textContent=''; setWork(true,label);
+  const t0=performance.now();
+  try{
+    const ff=await ensureFFmpeg();
+    await fn(ff);
+    log('--- done in '+((performance.now()-t0)/1000).toFixed(1)+'s ---');
+  }catch(err){
+    console.error(err);
+    log('ERROR: '+(err&&err.message||err));
+    showAlert('err','That edit failed: <b>'+escapeHtml(String(err&&err.message||err))+'</b>. This often means the clip is very large, an unusual codec, or (for Join) clips with different audio tracks. Try a shorter clip, or convert the clips to MP4 first.');
+  }finally{
+    busy=false; setPct(1); setTimeout(()=>setWork(false),400);
+  }
+}
+
+/* ffmpeg.wasm exec RETURNS an exit code (it does not throw on failure),
+   so wrap it and raise on anything non-zero. */
+async function execOk(ff, args){
+  const code = await ff.exec(args);
+  if(code!==0) throw new Error('the editor could not process this clip (ffmpeg exit '+code+') — open the engine log for details');
+  return code;
+}
+
+/* write selected clip into FS, return its fs name */
+async function putClip(ff, c){
+  const fsName='in_'+c.id+'.'+extOf(c.name);
+  await ff.writeFile(fsName, await fetchFile(c.file));
+  return fsName;
+}
+async function cleanup(ff, names){ for(const n of names){ try{ await ff.deleteFile(n); }catch(e){} } }
+
+/* =========================================================
+   OPERATIONS
+   ========================================================= */
+
+/* ---- TRIM ---- */
+let trimFmt='mp4';
+$('#tFmt').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; segPick('#tFmt',b); trimFmt=b.dataset.v; });
+$('#tInNow').onclick=()=>{ $('#tIn').value=vidIn.currentTime.toFixed(1); };
+$('#tOutNow').onclick=()=>{ $('#tOut').value=vidIn.currentTime.toFixed(1); };
+$('#runTrim').onclick=()=>{
+  const c=selClip(); if(!c){ showAlert('warn','Load and select a clip first.'); return; }
+  const inS=Math.max(0,parseFloat($('#tIn').value)||0);
+  const outS=parseFloat($('#tOut').value)||0;
+  if(outS<=inS){ showAlert('warn','Out-point must be after the in-point.'); return; }
+  run('Trimming…', async ff=>{
+    const src=await putClip(ff,c);
+    const dur=(outS-inS).toFixed(3);
+    let out, args, mime;
+    if(trimFmt==='copy'){
+      out='trim_out.'+extOf(c.name);
+      args=['-ss',String(inS),'-i',src,'-t',dur,'-c','copy',out];
+      mime='video/'+ (extOf(c.name)==='webm'?'webm':'mp4');
+    } else if(trimFmt==='webm'){
+      out='trim_out.webm';
+      args=['-ss',String(inS),'-i',src,'-t',dur,'-c:v','libvpx','-b:v','1M','-deadline','realtime','-cpu-used','5','-c:a','libvorbis',out];
+      mime='video/webm';
+    } else {
+      out='trim_out.mp4';
+      args=['-ss',String(inS),'-i',src,'-t',dur,'-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac',out];
+      mime='video/mp4';
+    }
+    await execOk(ff,args);
+    const data=await ff.readFile(out);
+    showResult(data, baseOf(c.name)+'_trim.'+out.split('.').pop(), mime);
+    await cleanup(ff,[src,out]);
+  });
+};
+
+/* ---- JOIN ---- */
+$('#runJoin').onclick=()=>{
+  if(clips.length<2){ showAlert('warn','Add at least two clips to join (drop more into the zone above).'); return; }
+  run('Joining — re-encoding each clip, this is the slow one…', async ff=>{
+    const norms=[], temps=[];
+    for(let i=0;i<clips.length;i++){
+      const c=clips[i];
+      setWork(true,`Joining — preparing clip ${i+1} of ${clips.length}…`);
+      const src=await putClip(ff,c); temps.push(src);
+      const norm='n_'+i+'.mp4'; norms.push(norm);
+      const vf='scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30';
+      const has=await hasAudio(ff,src);
+      let args;
+      if(has){
+        args=['-i',src,'-vf',vf,'-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-ar','44100','-ac','2',norm];
+      }else{
+        args=['-i',src,'-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=44100',
+              '-filter_complex','[0:v]'+vf+'[v]','-map','[v]','-map','1:a',
+              '-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest',norm];
+      }
+      await execOk(ff,args);
+    }
+    setWork(true,'Joining — stitching the pieces…');
+    const list=norms.map(n=>`file '${n}'`).join('\n')+'\n';
+    await ff.writeFile('list.txt', new TextEncoder().encode(list));
+    await execOk(ff,['-f','concat','-safe','0','-i','list.txt','-c','copy','joined.mp4']);
+    const data=await ff.readFile('joined.mp4');
+    showResult(data,'joined_'+clips.length+'clips.mp4','video/mp4');
+    await cleanup(ff,[...temps,...norms,'list.txt','joined.mp4']);
+  });
+};
+
+/* ---- CAPTION ---- */
+let capPos='bot',capSize='m',capColor='white',capBox='box';
+$('#capPos').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#capPos',b);capPos=b.dataset.v;});
+$('#capSize').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#capSize',b);capSize=b.dataset.v;});
+$('#capColor').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#capColor',b);capColor=b.dataset.v;});
+$('#capBox').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#capBox',b);capBox=b.dataset.v;});
+$('#runCap').onclick=()=>{
+  const c=selClip(); if(!c){ showAlert('warn','Load and select a clip first.'); return; }
+  const text=$('#capText').value.trim();
+  if(!text){ showAlert('warn','Type the caption text first.'); return; }
+  run('Burning caption…', async ff=>{
+    await ensureFont(ff);
+    const src=await putClip(ff,c);
+    await ff.writeFile('cap.txt', new TextEncoder().encode(text));
+    const size={s:'h/26',m:'h/18',l:'h/12'}[capSize];
+    const color=capColor==='ember'?'0xFF7A1A':'white';
+    const yPos={top:'h*0.08',mid:'(h-text_h)/2',bot:'h-text_h-(h*0.06)'}[capPos];
+    let dt='drawtext=fontfile=font.ttf:textfile=cap.txt:expansion=none:fontcolor='+color
+      +':fontsize='+size+':x=(w-text_w)/2:y='+yPos+':line_spacing=8';
+    if(capBox==='box') dt+=':box=1:boxcolor=black@0.55:boxborderw=24';
+    else dt+=':shadowcolor=black@0.8:shadowx=2:shadowy=2';
+    const out='cap_out.mp4';
+    await execOk(ff,['-i',src,'-vf',dt,'-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','copy',out]);
+    const data=await ff.readFile(out);
+    showResult(data, baseOf(c.name)+'_captioned.mp4','video/mp4');
+    await cleanup(ff,[src,'cap.txt',out]);
+  });
+};
+
+/* ---- AUDIO ---- */
+let auFmt='mp3';
+$('#auFmt').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#auFmt',b);auFmt=b.dataset.v;});
+$('#runAudio').onclick=()=>{
+  const c=selClip(); if(!c){ showAlert('warn','Load and select a clip first.'); return; }
+  run('Extracting audio…', async ff=>{
+    const src=await putClip(ff,c);
+    let out,args,mime;
+    if(auFmt==='wav'){ out='audio_out.wav'; args=['-i',src,'-vn','-acodec','pcm_s16le','-ar','44100',out]; mime='audio/wav'; }
+    else { out='audio_out.mp3'; args=['-i',src,'-vn','-acodec','libmp3lame','-q:a','2',out]; mime='audio/mpeg'; }
+    await execOk(ff,args);
+    const data=await ff.readFile(out);
+    showResult(data, baseOf(c.name)+'.'+auFmt, mime);
+    await cleanup(ff,[src,out]);
+  });
+};
+
+/* ---- CONVERT ---- */
+let cvFmt='mp4';
+$('#cvFmt').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;segPick('#cvFmt',b);cvFmt=b.dataset.v;});
+$('#runConvert').onclick=()=>{
+  const c=selClip(); if(!c){ showAlert('warn','Load and select a clip first.'); return; }
+  run('Converting…', async ff=>{
+    const src=await putClip(ff,c);
+    let out,args,mime;
+    if(cvFmt==='webm'){ out='conv_out.webm';
+      args=['-i',src,'-c:v','libvpx','-b:v','1M','-deadline','realtime','-cpu-used','5','-c:a','libvorbis',out]; mime='video/webm'; }
+    else { out='conv_out.mp4';
+      args=['-i',src,'-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac',out]; mime='video/mp4'; }
+    await execOk(ff,args);
+    const data=await ff.readFile(out);
+    showResult(data, baseOf(c.name)+'.'+cvFmt, mime);
+    await cleanup(ff,[src,out]);
+  });
+};
+
+/* ---------- segmented-control helper ---------- */
+function segPick(sel,btn){ document.querySelectorAll(sel+' button').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); }
+
+/* ---------- tabs ---------- */
+$('#tabs').addEventListener('click',e=>{
+  const t=e.target.closest('.tab'); if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
+  ['trim','join','caption','audio','convert'].forEach(n=>$('#p-'+n).classList.toggle('hide', n!==t.dataset.t));
+});
+
+/* ---------- drop zone + file input ---------- */
+const linkurl=$('#linkurl'), linkbtn=$('#linkbtn');
+async function addFromUrl(raw){
+  const url=(raw||'').trim(); if(!url) return;
+  clearAlert();
+  if(/(^|\.|\/\/)((youtube|youtu)\.be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|x\.com|twitter\.com)/i.test(url)){
+    showAlert('warn','<b>That platform doesn&rsquo;t let browsers fetch its video streams.</b> YouTube, Instagram, TikTok and the like only hand video to their own players, so a browser-only tool can&rsquo;t pull from them. Load your <b>original file</b> instead (you keep the masters), or paste a <b>direct link to a video file</b> &mdash; like the ones on our own sites.');
+    return;
+  }
+  let u; try{ u=new URL(url); }catch(e){ showAlert('warn','That doesn&rsquo;t look like a full link &mdash; include the <b>https://</b> part.'); return; }
+  setWork(true,'Fetching link…');
+  try{
+    const r=await fetch(u.href,{mode:'cors'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const total=+r.headers.get('content-length')||0;
+    let blob;
+    if(r.body&&total){
+      const reader=r.body.getReader(); const parts=[]; let got=0;
+      for(;;){ const {done,value}=await reader.read(); if(done)break; parts.push(value); got+=value.length; setPct(got/total); }
+      blob=new Blob(parts,{type:r.headers.get('content-type')||''});
+    } else { blob=await r.blob(); }
+    let name=decodeURIComponent((u.pathname.split('/').pop()||'').split('?')[0]);
+    if(!/\.(mp4|webm|mov|mkv|m4v|avi|ogv|3gp)$/i.test(name)) name=(name||'linked-video')+'.mp4';
+    addFiles([new File([blob],name,{type:blob.type||'video/mp4'})]);
+    linkurl.value='';
+  }catch(e){
+    showAlert('err','<b>Couldn&rsquo;t fetch that link.</b> The host has to allow cross-origin access (CORS) for a browser tool to read it &mdash; our own sites do; most others don&rsquo;t. You can always download the file yourself and drop it in. <span style="color:var(--dim)">('+escapeHtml(String(e&&e.message||e))+')</span>');
+  }finally{ setWork(false); }
+}
+linkbtn.onclick=()=>addFromUrl(linkurl.value);
+linkurl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addFromUrl(linkurl.value); } });
+drop.onclick=()=>fileInput.click();
+drop.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileInput.click(); } };
+fileInput.onchange=()=>{ if(fileInput.files.length) addFiles(fileInput.files); fileInput.value=''; };
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>e.preventDefault());
+
+/* clip list clicks (use / remove) */
+clipsEl.addEventListener('click',e=>{
+  const u=e.target.closest('[data-use]'); if(u){ select(+u.dataset.use); return; }
+  const r=e.target.closest('[data-rm]'); if(r){ removeClip(+r.dataset.rm); }
+});
+
+/* ---------- init note ----------
+   (single-threaded is the proven default; the multi-threaded core is tried
+   automatically only when the page is cross-origin isolated — see ensureFFmpeg) */
+</script>
+</body>
+</html>
