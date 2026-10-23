@@ -1,7 +1,7 @@
 # Tools
 
 Free, offline-friendly web tools from the
-[Fellowship of Living Systems](https://livingsys.org) / Food System Hackers.
+[Fellowship of Living Systems](https://livingsys.org).
 
 Each tool is a small, self-contained page that runs entirely in your browser.
 No accounts, no tracking, nothing uploaded unless a tool says so plainly. We
@@ -30,7 +30,9 @@ Every tool is a folder of static files — no build step, no server framework.
   directly.)
 - **Serve it locally:** from a tool's folder, any static server works, e.g.
   `python -m http.server` then visit the printed `localhost` URL.
-- **Host it:** copy the folder to any static web host behind HTTPS.
+- **Host it:** copy the folder to any static web host behind HTTPS. For example:
+  - nginx: `location /tools/ { root /var/www; try_files $uri $uri/ =404; }`
+  - Docker: `docker run -p 8080:80 -v $PWD:/usr/share/nginx/html:ro nginx:alpine`
 
 ## Privacy, honestly
 
@@ -39,7 +41,9 @@ browser's **built-in speech recognition** for voice features. In Chrome that
 sends microphone audio to Google to turn it into text (the same engine as
 voice typing) — so voice features need a connection and a Chromium browser.
 Anything a tool records (e.g. webcam video) stays **on your device** and is
-never uploaded by these pages. Each tool restates this in its own About panel.
+never uploaded by these pages. Each tool restates this in its own About panel. On the roadmap: fully local
+speech recognition (Vosk or whisper-wasm) so voice features can drop the cloud
+dependency too.
 
 ## Licensing
 
