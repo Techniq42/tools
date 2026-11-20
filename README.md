@@ -41,9 +41,11 @@ browser's **built-in speech recognition** for voice features. In Chrome that
 sends microphone audio to Google to turn it into text (the same engine as
 voice typing) — so voice features need a connection and a Chromium browser.
 Anything a tool records (e.g. webcam video) stays **on your device** and is
-never uploaded by these pages. Each tool restates this in its own About panel. On the roadmap: fully local
-speech recognition (Vosk or whisper-wasm) so voice features can drop the cloud
-dependency too.
+never uploaded by these pages. Each tool restates this in its own About panel,
+and the full policy for every tool is in [`privacy/`](privacy/).
+
+On the roadmap: fully local speech recognition (Vosk or whisper-wasm), so voice
+features can drop the cloud dependency too.
 
 ## Licensing
 
